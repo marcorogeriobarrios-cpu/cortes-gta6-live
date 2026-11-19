@@ -6,7 +6,6 @@ name: Live GTA 6 (Alanzoka)
 on:
   schedule:
     - cron: "30 4,10,16,22 18,19 11 *"
-    - cron: "30 4 20 11 *"
   workflow_dispatch:
     inputs:
       teste_url:
