@@ -18,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: live-gta
+  group: live-gta-v2
   cancel-in-progress: false
 
 jobs:
