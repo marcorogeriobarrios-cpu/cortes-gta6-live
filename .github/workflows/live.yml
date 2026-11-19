@@ -4,8 +4,6 @@ name: Live GTA 6 (Alanzoka)
 # 01:30, 07:30, 13:30 e 19:30 de Brasília). Em cada turno o robô olha a live a cada 5 min, corta os
 # blocos novos e publica na hora.
 on:
-  schedule:
-    - cron: "30 4,10,16,22 18,19 11 *"
   workflow_dispatch:
     inputs:
       teste_url:
