@@ -9,6 +9,9 @@
 #  - barra de progresso amarela no pé da tela (quem vê a barra andando fica até o fim).
 #  - gancho maior e pulsando nos 3 primeiros segundos.
 ABERTURA = 2.5
+# DESABAFOS (desabafo.py liga isto só durante o corte): o rosto é o que importa, então a câmera fica com 58% da
+# tela (em vez de 40%) e há um zoom rápido a cada ~10 s, como o short viral do Alanzoka que o Marco mostrou.
+DESTAQUE_ROSTO = False
 
 _legenda_ass_original = legenda_ass
 
@@ -254,6 +257,8 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
         if a0 is not None:
             picos.append(pico - a0)
         picos.append(pico - ini + desloc)
+    if DESTAQUE_ROSTO and not picos:
+        picos = [6.0, 16.0, 26.0, 36.0, 46.0]
     picos = [p for p in picos if 0.5 <= p < total - 1.0]
 
     H = ALTURA_TOPO
@@ -265,7 +270,7 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
     else:
         sat, off = trecho, 0.0
         baixo = ""
-    alt_cam = int(H * 0.40)
+    alt_cam = int(H * (0.58 if DESTAQUE_ROSTO else 0.40))
     alt_jogo_cam = H - alt_cam
     r = rosto.detectar(trecho, ini, dur, proporcao_cam=1080 / alt_cam)
     gancho_y = 150
