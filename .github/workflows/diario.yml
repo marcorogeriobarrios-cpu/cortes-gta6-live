@@ -1,7 +1,8 @@
-name: Diário 1 vídeo por hora
+name: Diário (6 por dia, horário de pico)
 
 # Plantão diário (a partir de 20/11/2026): 4 turnos de ~6 h por dia (00:50, 06:50, 12:50 e 18:50 de Brasília).
-# Corta (GTA do Alanzoka primeiro, depois os canais do canais.yaml) e publica 1 vídeo por hora até a cota acabar.
+# Corta (GTA do Alanzoka primeiro, depois os canais do canais.yaml) e publica no máximo 6 por dia, a cada 2 h,
+# das 11h às 22h59 de Brasília (ajustes.py, 24/11/2026: 1 por hora derrubou o alcance).
 on:
   schedule:
     - cron: "50 3,9,15,21 * * *"
@@ -28,6 +29,9 @@ jobs:
       - name: Desempacotar o código
         run: python -c "import base64,io,zipfile; zipfile.ZipFile(io.BytesIO(base64.b64decode(open('pacote.b64').read()))).extractall('.')"
 
+      - name: Ajustes (ritmo 6 por dia e personagem centralizado)
+        run: python ajustes.py
+
       - name: ffmpeg e fontes (Arial Black das legendas)
         run: |
           echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
@@ -50,7 +54,7 @@ jobs:
           PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
         run: python preparar_nuvem.py
 
-      - name: Plantão diário (1 vídeo por hora)
+      - name: Plantão diário (6 por dia)
         env:
           PYTHONIOENCODING: utf-8
         run: python -u diario.py --turno 345
