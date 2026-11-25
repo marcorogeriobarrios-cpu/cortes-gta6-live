@@ -181,3 +181,14 @@ if not _v.exists():
 _m = Path("cortes/montagem.py")
 _m.write_text(_m.read_text(encoding="utf-8") + _v.read_text(encoding="utf-8"), encoding="utf-8")
 print("visual novo aplicado: abertura com o pico, zoom, barra de progresso, gancho pulsando")
+
+# 25/11/2026: gancho e título por IA (gancho_ia.py, sempre Claude Haiku 5.5 leve; só age com ANTHROPIC_API_KEY).
+if not Path("gancho_ia.py").exists():
+    raise SystemExit("ajustes.py: falta o gancho_ia.py")
+for _arq, _fn in (("live_gta.py", "instalar_live"), ("cortes/pipeline.py", "instalar_pipeline")):
+    _p = Path(_arq)
+    _p.write_text(_p.read_text(encoding="utf-8") + f"\n\nimport gancho_ia as _gia\n_gia.{_fn}(globals())\n",
+                  encoding="utf-8")
+_r = Path("requirements.txt")
+_r.write_text(_r.read_text(encoding="utf-8").rstrip("\n") + "\nanthropic\n", encoding="utf-8")
+print("gancho por IA instalado (Haiku, leve)")
