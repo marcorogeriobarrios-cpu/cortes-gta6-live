@@ -104,7 +104,93 @@ def _gerar(segs: list[dict], ini: float, fim: float, nome: str, jogo: str) -> tu
     return gancho, titulo
 
 
+# ---------------- COMEÇO E FIM DO CORTE (25/11/2026) ----------------
+# Marco: "trechos sem sentido no início e corta do nada". A regra fixa (começar 8-15 s antes do pico) não entende
+# a conversa; a IA lê o trecho todo e escolhe um começo que se entende sozinho e um fim depois do desfecho.
+SISTEMA_JANELA = """Você edita cortes de live (YouTube Shorts) de um canal brasileiro de cortes de streamers.
+Você recebe a transcrição automática de um trecho de live com o tempo de cada frase em segundos, o instante do
+momento forte (a reação) e os limites de duração. Escolha onde o corte começa e termina:
+
+- inicio: o começo de uma frase que dá o contexto do que vai acontecer, de forma que alguém que nunca viu a live
+  entenda a situação desde o primeiro segundo. Não comece no meio de um assunto, nem com uma frase solta que não
+  tem nada a ver com o momento forte.
+- fim: logo depois que a situação se resolve (a reação termina, a piada fecha, a fuga acaba, ele comenta o que
+  aconteceu). Nunca termine no meio de uma frase ou no meio da ação.
+- O momento forte tem que ficar dentro do corte, e a duração tem que respeitar os limites.
+- Use os tempos das frases da transcrição (inicio = tempo de começo de uma frase; fim = tempo de fim de uma frase)."""
+
+ESQUEMA_JANELA = {
+    "type": "object",
+    "properties": {"inicio": {"type": "number"}, "fim": {"type": "number"}},
+    "required": ["inicio", "fim"],
+    "additionalProperties": False,
+}
+
+
+def janela(segs: list[dict], ini: float, fim: float, pico: float, minimo: float, maximo: float):
+    """(ini, fim) melhores escolhidos pela IA dentro do trecho, ou None. Nunca levanta erro."""
+    try:
+        return _janela(segs, ini, fim, pico, minimo, maximo)
+    except Exception as e:
+        print(f"  janela IA falhou: {type(e).__name__}: {str(e)[:150]}", flush=True)
+        return None
+
+
+def _janela(segs, ini, fim, pico, minimo, maximo):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    falas = [s for s in segs if s["texto"].strip()]
+    if len(falas) < 3:
+        return None
+    import anthropic
+    texto = "\n".join(f"[{s['ini']:6.1f} - {s['fim']:6.1f}] {s['texto'].strip()}" for s in falas)
+    pedido = (f"Momento forte: {pico:.1f} s. Sugestão automática: de {ini:.1f} a {fim:.1f} s.\n"
+              f"Duração: no mínimo {minimo:.0f} s e no máximo {maximo:.0f} s.\n\nTranscrição do trecho:\n{texto}")
+    client = anthropic.Anthropic(max_retries=2, timeout=60.0)
+    try:
+        r = client.messages.create(
+            model=MODELO, max_tokens=4000, system=SISTEMA_JANELA,
+            output_config={"effort": ESFORCO, "format": {"type": "json_schema", "schema": ESQUEMA_JANELA}},
+            messages=[{"role": "user", "content": pedido}],
+        )
+    except anthropic.APIError as e:
+        print(f"  janela IA: erro da API: {str(e)[:150]}", flush=True)
+        return None
+    if r.stop_reason != "end_turn":
+        return None
+    d = json.loads(next(b.text for b in r.content if b.type == "text"))
+    a, b = float(d["inicio"]), float(d["fim"])
+    # encaixa nos limites das frases (começo de frase / fim de frase) e confere as regras
+    a = min((s["ini"] for s in falas), key=lambda x: abs(x - a))
+    b = min((s["fim"] for s in falas), key=lambda x: abs(x - b)) + 0.6  # respiro no fim
+    if not (a <= pico <= b) or not (minimo - 1 <= b - a <= maximo + 1):
+        print(f"  janela IA fora das regras ({a:.1f}-{b:.1f}), mantendo a automática", flush=True)
+        return None
+    print(f"  janela IA: {a:.1f}-{b:.1f} s (automática era {ini:.1f}-{fim:.1f})", flush=True)
+    return a, b
+
+
+def _instalar_janela() -> None:
+    """Troca transcricao.janela_emocao: a regra automática acha o pico, a IA acerta começo e fim."""
+    from cortes import transcricao
+    if getattr(transcricao, "_janela_ia", False):
+        return
+    orig = transcricao.janela_emocao
+
+    def janela_emocao(segs, pico_aprox, minimo, maximo):
+        jan = orig(segs, pico_aprox, minimo, maximo)
+        if not jan:
+            return jan
+        ini, fim, pico = jan
+        melhor = janela(segs, ini, fim, pico, minimo, maximo)
+        return (melhor[0], melhor[1], pico) if melhor else jan
+
+    transcricao.janela_emocao = janela_emocao
+    transcricao._janela_ia = True
+
+
 def instalar_live(g: dict) -> None:
+    _instalar_janela()
     """Troca gancho_gta/titulo_gta do live_gta.py (chamar com globals() no fim do arquivo)."""
     orig_gancho, orig_titulo = g["gancho_gta"], g["titulo_gta"]
     ultimo: dict = {}
@@ -128,6 +214,7 @@ def instalar_live(g: dict) -> None:
 
 def instalar_pipeline(g: dict) -> None:
     """Troca _titulo do cortes/pipeline.py (o gancho é a parte antes do " | ")."""
+    _instalar_janela()
     orig = g["_titulo"]
 
     def _titulo(segs, pico, nome, jogo):
