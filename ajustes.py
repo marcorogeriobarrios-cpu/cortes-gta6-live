@@ -172,3 +172,12 @@ for arquivo, extra in ACRESCIMOS.items():
     p.write_text(p.read_text(encoding="utf-8") + extra, encoding="utf-8")
 print("ajustes aplicados: 6 por dia (2 h, 11h-22h59), personagem centralizado, sem pergunta no fim, "
       "dicionário de jogo, filtro de graça (risada, palavrão, grito)")
+
+# 25/11/2026: visual novo (abertura com o pico, zoom na reação, barra de progresso, gancho pulsando).
+# O código fica no visual_inicio.py do repositório e é acrescentado no fim do montagem.py.
+_v = Path("visual_inicio.py")
+if not _v.exists():
+    raise SystemExit("ajustes.py: falta o visual_inicio.py")
+_m = Path("cortes/montagem.py")
+_m.write_text(_m.read_text(encoding="utf-8") + _v.read_text(encoding="utf-8"), encoding="utf-8")
+print("visual novo aplicado: abertura com o pico, zoom, barra de progresso, gancho pulsando")
