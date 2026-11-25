@@ -2,7 +2,7 @@
 
 24/11/2026:
   1) RITMO: o robô diário postava 1 por hora (até 71 num dia) e o alcance caiu para 1-19 views por vídeo;
-     dias com 2 a 9 shorts tiveram ~1.000-1.500. Agora: no máximo 4 por dia, a cada 3 h, das 11h às 22h59.
+     dias com 2 a 9 shorts tiveram ~1.000-1.500. Agora: no máximo 6 por dia, a cada 2 h, das 11h às 22h59 (Marco: 4 era pouco).
   2) PERSONAGEM CENTRALIZADO: com câmera no canto, o jogo de baixo era recortado só do lado sem câmera e o
      personagem (3ª pessoa, no meio da tela) saía deslocado. Agora recorta pelo centro e borra a câmera.
 Se o código mudar e algum ajuste não encaixar, falha de propósito (melhor parar do que voltar a 1/h).
@@ -13,11 +13,11 @@ TROCAS = {
  "diario.py": [
   [
    "INTERVALO = 3600\n",
-   "INTERVALO = 3 * 3600  # ajustes.py\n"
+   "INTERVALO = 2 * 3600  # ajustes.py\n"
   ],
   [
    "FILA_MIN = 3\n",
-   "FILA_MIN = 3\n\nMAX_POR_DIA = 4  # ajustes.py\n\n\ndef _pode_publicar_agora() -> bool:\n    agora = dt.datetime.now(BRT)\n    if not (11 <= agora.hour < 23):\n        return False\n    hoje = agora.strftime('%d/%m')\n    try:\n        linhas = lg.LOG.read_text(encoding='utf-8').splitlines()\n    except Exception:\n        linhas = []\n    return sum(1 for l in linhas if l.startswith(hoje) and 'PUBLICADO' in l) < MAX_POR_DIA\n"
+   "FILA_MIN = 3\n\nMAX_POR_DIA = 6  # ajustes.py\n\n\ndef _pode_publicar_agora() -> bool:\n    agora = dt.datetime.now(BRT)\n    if not (11 <= agora.hour < 23):\n        return False\n    hoje = agora.strftime('%d/%m')\n    try:\n        linhas = lg.LOG.read_text(encoding='utf-8').splitlines()\n    except Exception:\n        linhas = []\n    return sum(1 for l in linhas if l.startswith(hoje) and 'PUBLICADO' in l) < MAX_POR_DIA\n"
   ],
   [
    "if not cota_esgotada() and time.time() - ultimo_post()",
@@ -40,4 +40,4 @@ for arquivo, lista in TROCAS.items():
             raise SystemExit(f"ajustes.py: não achei o trecho em {arquivo}: {velho[:70]!r}")
         cod = cod.replace(velho, novo, 1)
     p.write_text(cod, encoding="utf-8")
-print("ajustes aplicados: ritmo 4 por dia (3 h, 11h-22h59) e personagem centralizado")
+print("ajustes aplicados: ritmo 6 por dia (2 h, 11h-22h59) e personagem centralizado")
