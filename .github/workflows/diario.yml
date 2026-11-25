@@ -29,7 +29,7 @@ jobs:
       - name: Desempacotar o código
         run: python -c "import base64,io,zipfile; zipfile.ZipFile(io.BytesIO(base64.b64decode(open('pacote.b64').read()))).extractall('.')"
 
-      - name: Ajustes (ritmo 6 por dia e personagem centralizado)
+      - name: Ajustes (ritmo, visual, legenda do jogo, gancho por IA)
         run: python ajustes.py
 
       - name: ffmpeg, fontes e Tesseract (legenda do jogo)
@@ -58,6 +58,7 @@ jobs:
       - name: Plantão diário (6 por dia)
         env:
           PYTHONIOENCODING: utf-8
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -u diario.py --turno 345
 
       - name: Guardar os vídeos do teste para conferir
