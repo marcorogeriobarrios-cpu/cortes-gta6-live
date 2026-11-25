@@ -55,6 +55,7 @@ def _zoom(picos: list[float], cy: int, H: int) -> str:
 # (embaixo, no meio) 2x por segundo e ela é escrita de novo, inteira, em azul-claro numa tarja escura por cima
 # do lugar onde ela fica no jogo. Sem Tesseract (ou sem legenda no jogo) o vídeo sai como antes.
 _TESS_WIN = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+_QPS = 4  # quadros lidos por segundo
 ESTILO_JOGO = ("Style: Jogo,Arial,50,&H00FFE14D,&H00FFE14D,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,4,2,5,"
                "50,50,0,1")
 
@@ -117,7 +118,9 @@ def legenda_do_jogo(trecho: Path, t_ini: float, t_fim: float) -> list[tuple[floa
         for lim, pre in ((240, "a"), (215, "b")):
             subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", f"{t_ini:.2f}", "-t", f"{t_fim - t_ini:.2f}",
                             "-i", str(trecho), "-vf",
-                            "fps=2,crop=iw*0.70:ih*0.16:iw*0.15:ih*0.80,format=gray,"
+                            # 4x por segundo (falas curtas passavam entre os quadros) e faixa de 73% a 97% da
+                            # altura (legenda de 3 linhas começa mais alto)
+                            f"fps={_QPS},crop=iw*0.70:ih*0.24:iw*0.15:ih*0.73,format=gray,"
                             f"lut=y='if(gt(val,{lim}),0,255)',scale=iw*2:-1", str(pasta / f"{pre}%04d.png")],
                            capture_output=True, check=True)
         quadros = sorted(pasta.glob("a*.png"))
@@ -144,23 +147,24 @@ def legenda_do_jogo(trecho: Path, t_ini: float, t_fim: float) -> list[tuple[floa
 
     textos = [limpa(tx) if tx else "" for tx in textos]
     eventos, atual = [], None
+    passo = 1 / _QPS
     for k, tx in enumerate(textos):
-        t = t_ini + k * 0.5
+        t = t_ini + k * passo
         if atual and tx and parecido(atual["v"][-1], tx):
             atual["v"].append(tx)
-            atual["fim"] = t + 0.5
+            atual["fim"] = t + passo
             continue
         if atual:
             eventos.append(atual)
             atual = None
         if tx:
-            atual = {"ini": t, "fim": t + 0.5, "v": [tx]}
+            atual = {"ini": t, "fim": t + passo, "v": [tx]}
     if atual:
         eventos.append(atual)
     # a mesma fala separada por um quadro ruim (ou um pedaço dela) vira uma legenda só
     juntos = []
     for e in eventos:
-        if juntos and e["ini"] - juntos[-1]["fim"] <= 1.5 and any(parecido(a, b) for a in juntos[-1]["v"]
+        if juntos and e["ini"] - juntos[-1]["fim"] <= 1.0 and any(parecido(a, b) for a in juntos[-1]["v"]
                                                                    for b in e["v"]):
             juntos[-1]["fim"] = e["fim"]
             juntos[-1]["v"] += e["v"]
@@ -276,11 +280,23 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
     elif r and r["tipo"] == "cam":
         larg_esc = round(alt_jogo_cam * 16 / 9)
         esq = (larg_esc - 1080) / 2
-        bx0 = max(0, int(r["x"] * larg_esc - esq))
-        bx1 = min(1080, int((r["x"] + r["w"]) * larg_esc - esq))
+        # 25/11/2026 (Marco: "bug na lateral"): se a câmera do streamer só invade a BEIRA do recorte, o recorte
+        # anda para o lado e a deixa de fora (sem borrão); o personagem fica no máx. 220 px fora do centro.
+        # O borrão só fica quando a câmera está mais para o meio da tela.
+        cx0, cx1 = r["x"] * larg_esc - esq, (r["x"] + r["w"]) * larg_esc - esq  # câmera no recorte central
+        dx = 0
+        if cx0 < 1080 and cx1 > 0:
+            if cx0 >= 540 and 1080 - cx0 <= 220:      # câmera à direita, entrando pouco
+                dx = -int(1080 - cx0 + 4)
+            elif cx1 <= 540 and cx1 <= 220:            # câmera à esquerda, entrando pouco
+                dx = int(cx1 + 4)
+        dx = int(max(-esq, min(esq, dx)))
+        bx0 = max(0, int(cx0 - dx))
+        bx1 = min(1080, int(cx1 - dx))
         by0 = max(0, int(r["y"] * alt_jogo_cam))
         by1 = min(alt_jogo_cam, int((r["y"] + r["h"]) * alt_jogo_cam))
-        jogo = f"[j]scale=-2:{alt_jogo_cam},crop=1080:{alt_jogo_cam}:x='(iw-1080)/2':y=0,setsar=1"
+        jogo = (f"[j]scale=-2:{alt_jogo_cam},crop=1080:{alt_jogo_cam}:"
+                f"x='max(0,min(iw-1080,(iw-1080)/2+{dx}))':y=0,setsar=1")
         bw, bh = (bx1 - bx0) // 2 * 2, (by1 - by0) // 2 * 2
         raio = min(30, min(bw, bh) // 4 - 1)  # boxblur: raio < metade do lado do croma (falhava com área pequena)
         if raio >= 2:
@@ -293,7 +309,7 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
         y_aviso = alt_cam + 220
         cy = alt_cam // 2  # o zoom da reação vai no rosto (câmera em cima)
         # onde a legenda original fica no jogo (80-96% da altura da tela), sem cobrir a barra de progresso
-        y_leg_jogo = (alt_cam + int(alt_jogo_cam * 0.79), min(H - 16, alt_cam + int(alt_jogo_cam * 0.97)))
+        y_leg_jogo = (alt_cam + int(alt_jogo_cam * 0.72), min(H - 16, alt_cam + int(alt_jogo_cam * 0.97)))
         topo = ("[SRC]split[c][j];"
                 f"[c]crop=w=iw*{r['w']:.4f}:h=ih*{r['h']:.4f}:x=iw*{r['x']:.4f}:y=ih*{r['y']:.4f},"
                 f"scale=1080:{alt_cam}:force_original_aspect_ratio=increase,crop=1080:{alt_cam},setsar=1[cam];"
@@ -304,7 +320,7 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
         pos_leg = (540, y_jogo + alt_jogo + 110)
         y_aviso = y_jogo + 80
         cy = H // 2
-        y_leg_jogo = (y_jogo + int(alt_jogo * 0.79), y_jogo + int(alt_jogo * 0.97))
+        y_leg_jogo = (y_jogo + int(alt_jogo * 0.72), y_jogo + int(alt_jogo * 0.97))
         topo = ("[SRC]split[f][j];"
                 f"[f]scale=-2:{H},crop=1080:{H},boxblur=25:2,eq=brightness=-0.15,setsar=1[fundo];"
                 f"[j]scale=-2:{alt_jogo},crop=1080:{alt_jogo}:x='(iw-1080)*{foco_x}':y=0,setsar=1[jogo];"
