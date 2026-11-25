@@ -2,8 +2,8 @@
 
 # ---------------- ajustes.py (25/11/2026): início que prende + visual ----------------
 # Marco: "melhore o visual para atrair mais pessoas, faça algo que prenda no início".
-#  - SEMPRE abre com o momento forte (antes só quando o pico estava no fim do corte): 2,5 s do pico,
-#    flash branco e "POUCO ANTES…", e aí o corte do começo.
+#  - SEM a abertura com o momento forte repetido + "POUCO ANTES…" (Marco não gostou: a fala aparecia
+#    solta e depois se repetia).
 #  - "punch" de zoom: o vídeo entra com zoom e solta no 1º meio segundo (o primeiro quadro já se mexe) e
 #    dá um zoom rápido no rosto/na cena no instante da reação.
 #  - barra de progresso amarela no pé da tela (quem vê a barra andando fica até o fim).
@@ -50,12 +50,191 @@ def _zoom(picos: list[float], cy: int, H: int) -> str:
             f":d=1:s=1080x{H}:fps=30,")
 
 
+# LEGENDA DO JOGO (25/11/2026, Marco: "transcrever a legenda do jogo... de uma cor diferente da do streamer"):
+# o recorte vertical corta as laterais da legenda do jogo. O Tesseract lê a faixa de legenda da tela ORIGINAL
+# (embaixo, no meio) 2x por segundo e ela é escrita de novo, inteira, em azul-claro numa tarja escura por cima
+# do lugar onde ela fica no jogo. Sem Tesseract (ou sem legenda no jogo) o vídeo sai como antes.
+_TESS_WIN = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+ESTILO_JOGO = ("Style: Jogo,Arial,50,&H00FFE14D,&H00FFE14D,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,4,2,5,"
+               "50,50,0,1")
+
+
+def _tesseract() -> str | None:
+    import shutil
+    return shutil.which("tesseract") or (str(_TESS_WIN) if _TESS_WIN.exists() else None)
+
+
+def _ler_quadro(exe: str, png: Path) -> str:
+    import os
+    import re as _re
+    env = dict(os.environ)
+    local = Path(__file__).resolve().parent.parent / "dados" / "tessdata"  # português baixado à parte (Windows)
+    if local.exists():
+        env["TESSDATA_PREFIX"] = str(local)
+    # -c tessedit_create_tsv=1 (e não o atalho "tsv", que depende da pasta configs do tessdata)
+    r = subprocess.run([exe, str(png), "stdout", "-l", "por", "--psm", "6", "-c", "tessedit_create_tsv=1"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+    linhas = {}
+    for ln in r.stdout.splitlines()[1:]:
+        c = ln.split("\t")
+        if len(c) < 12 or not c[11].strip():
+            continue
+        try:
+            conf = float(c[10])
+        except ValueError:
+            continue
+        linhas.setdefault((c[2], c[3], c[4]), []).append((conf, c[11].strip()))
+    boas = []
+    for pals in linhas.values():  # linha a linha: sujeira (grama, céu, placa, HUD) sai com nota baixa
+        texto = " ".join(p for _, p in pals)
+        letras = _re.findall(r"[A-Za-zÀ-ÿ]{2,}", texto)
+        sem_espaco = texto.replace(" ", "")
+        media = sum(cf for cf, _ in pals) / len(pals)
+        if (media >= 70 and len(letras) >= 1 and sem_espaco
+                and sum(map(len, letras)) / len(sem_espaco) >= 0.7 and len(sem_espaco) >= 4):
+            boas.append(texto)
+    texto = " ".join(boas).strip()
+    if len(_re.findall(r"[A-Za-zÀ-ÿ]{2,}", texto)) < 2:
+        return ""
+    return texto
+
+
+def legenda_do_jogo(trecho: Path, t_ini: float, t_fim: float) -> list[tuple[float, float, str]]:
+    """[(ini, fim, texto)] no tempo do trecho."""
+    import difflib
+    import shutil
+    import tempfile
+    from collections import Counter
+    from concurrent.futures import ThreadPoolExecutor
+    exe = _tesseract()
+    if not exe or t_fim - t_ini < 1:
+        return []
+    pasta = Path(tempfile.mkdtemp(prefix="legjogo_"))
+    try:
+        # faixa da legenda (70% do meio, 80-96% da altura), só o branco do texto, preto no branco, 2x maior
+        # limiar 240 (só o branco puro das letras): com 190 a grama/céu claros viravam borrão e a leitura falhava;
+        # se o 240 não acha nada no quadro, tenta 215
+        for lim, pre in ((240, "a"), (215, "b")):
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", f"{t_ini:.2f}", "-t", f"{t_fim - t_ini:.2f}",
+                            "-i", str(trecho), "-vf",
+                            "fps=2,crop=iw*0.70:ih*0.16:iw*0.15:ih*0.80,format=gray,"
+                            f"lut=y='if(gt(val,{lim}),0,255)',scale=iw*2:-1", str(pasta / f"{pre}%04d.png")],
+                           capture_output=True, check=True)
+        quadros = sorted(pasta.glob("a*.png"))
+        with ThreadPoolExecutor(4) as ex:
+            textos = list(ex.map(lambda q: _ler_quadro(exe, q), quadros))
+            falta = [k for k, tx in enumerate(textos) if not tx]
+            segunda = list(ex.map(lambda k: _ler_quadro(exe, pasta / f"b{k + 1:04d}.png"), falta))
+        for k, tx in zip(falta, segunda):
+            textos[k] = tx
+    except Exception:
+        return []
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)
+    import re as _re
+
+    def parecido(a: str, b: str) -> bool:
+        a, b = a.lower(), b.lower()
+        return (difflib.SequenceMatcher(None, a, b).ratio() > 0.6
+                or (min(len(a), len(b)) >= 8 and (a in b or b in a)))
+
+    def limpa(s: str) -> str:
+        s = _re.sub(r"^(?:\W*\w{0,2}\W+)(?=[A-ZÀ-Ý])", "", s.strip())  # "e. Caden O:" -> "Caden O:"
+        return s.strip(" :;|-_—").strip()
+
+    textos = [limpa(tx) if tx else "" for tx in textos]
+    eventos, atual = [], None
+    for k, tx in enumerate(textos):
+        t = t_ini + k * 0.5
+        if atual and tx and parecido(atual["v"][-1], tx):
+            atual["v"].append(tx)
+            atual["fim"] = t + 0.5
+            continue
+        if atual:
+            eventos.append(atual)
+            atual = None
+        if tx:
+            atual = {"ini": t, "fim": t + 0.5, "v": [tx]}
+    if atual:
+        eventos.append(atual)
+    # a mesma fala separada por um quadro ruim (ou um pedaço dela) vira uma legenda só
+    juntos = []
+    for e in eventos:
+        if juntos and e["ini"] - juntos[-1]["fim"] <= 1.5 and any(parecido(a, b) for a in juntos[-1]["v"]
+                                                                   for b in e["v"]):
+            juntos[-1]["fim"] = e["fim"]
+            juntos[-1]["v"] += e["v"]
+        else:
+            juntos.append(e)
+    eventos = juntos
+    saida = []
+    for e in eventos:
+        if len(e["v"]) < 2:  # apareceu num quadro só: provavelmente ruído
+            continue
+        # a melhor leitura é a que tem as palavras que mais se repetem nos outros quadros
+        # (erro de leitura, tipo "Porgue" ou "gssa", aparece num quadro só)
+        cont = Counter(p for v in e["v"] for p in set(v.lower().split()))
+
+        def nota(v: str) -> int:
+            return sum(cont[p] if cont[p] > 1 else -2 for p in v.lower().split())
+        texto = max(e["v"], key=lambda v: (nota(v), len(v)))
+        saida.append((e["ini"], e["fim"], texto))
+    return saida
+
+
+def _por_legenda_do_jogo(ass: Path, trecho: Path, ini: float, fim: float, a0: float | None,
+                         faixa: tuple[int, int] | None) -> int:
+    """faixa = (y0, y1) da área onde a legenda original do jogo aparece no vídeo final: enquanto há fala do
+    jogo, uma faixa escura da largura toda cobre a legenda original (cortada nas laterais) e a nova vai por cima."""
+    if faixa is None:
+        return 0
+    y0, y1 = faixa
+    y = (y0 + y1) // 2
+    jan_ini = min(ini, a0) if a0 is not None else ini
+    jan_fim = max(fim, a0 + ABERTURA) if a0 is not None else fim
+    eventos = legenda_do_jogo(trecho, jan_ini, jan_fim)
+    if not eventos:
+        return 0
+    desloc = ABERTURA if a0 is not None else 0
+    linhas = []
+    # uma cor por personagem ("Caden O: ..."), na ordem em que aparecem; fala sem nome = quem falou por último.
+    # Nunca amarelo/branco (cores do streamer). Cores em BGR do ASS: azul-claro, rosa, verde, laranja.
+    import re as _re
+    cores = ["&HFFE14D&", "&HC878FF&", "&H8CFF78&", "&H3CAAFF&"]
+    de_quem, ultimo = {}, None
+    for e0, e1, tx in eventos:
+        tx = tx.replace("{", "").replace("}", "").replace("\\", "")
+        nome = _re.match(r"^([A-ZÀ-Ý][\wÀ-ÿ'.\- ]{0,20}?)\s*:", tx)
+        if nome:
+            # só a 1ª palavra do nome ("Caden O", "Caden-O", "Caden'O" = o mesmo personagem)
+            chave = (_re.findall(r"[a-zà-ÿ]+", nome.group(1).lower()) or ["?"])[0][:6]
+            ultimo = de_quem.setdefault(chave, cores[len(de_quem) % len(cores)])
+        cor = ultimo or cores[0]
+        tx = f"{{\\1c{cor}}}" + tx
+        partes = []
+        if a0 is not None:
+            partes.append((max(e0, a0) - a0, min(e1, a0 + ABERTURA) - a0))
+        partes.append((max(e0, ini) - ini + desloc, min(e1, fim) - ini + desloc))
+        for a, b in partes:
+            if b - a >= 0.3:
+                linhas.append(f"Dialogue: 4,{_t(a)},{_t(b)},Leg,,0,0,0,,{{\\an7\\pos(0,{y0})\\bord0\\shad0"
+                              f"\\1c&H000000&\\1a&H10&\\p1}}m 0 0 l 1080 0 1080 {y1 - y0} 0 {y1 - y0}{{\\p0}}")
+                linhas.append(f"Dialogue: 5,{_t(a)},{_t(b)},Jogo,,0,0,0,,{{\\q0\\pos(540,{y})}}{tx}")
+    if not linhas:
+        return 0
+    txt = ass.read_text(encoding="utf-8-sig")
+    txt = txt.replace("\n[Events]", ESTILO_JOGO + "\n\n[Events]", 1)
+    ass.write_text(txt + "\n" + "\n".join(linhas), encoding="utf-8-sig")
+    return len(linhas)
+
+
 def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: str, foco_x: float,
           saida: Path, gancho: str = "", pico: float | None = None, pergunta: str = "") -> Path:
     dur = fim - ini
     a0 = None
-    # abertura com o momento forte sempre que ele não está logo no começo do corte
-    if pico is not None and pico - ini >= 5.0:
+    # SEM abertura repetida (25/11/2026, Marco: "mostra uma fala nada a ver, depois POUCO ANTES e repete a
+    # fala"): o corte começa direto; o que prende é o gancho, o zoom de entrada e a barra de progresso
+    if False and pico is not None and pico - ini >= 5.0:
         a0 = max(0.0, pico - 1.0)
     total = dur + (ABERTURA if a0 is not None else 0)
     pal = []
@@ -91,6 +270,7 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
         y_aviso = 420
         gancho_y = int(H * 0.60)
         cy = int(H * 0.35)
+        y_leg_jogo = None  # rosto grande (podcast): não tem legenda de jogo
         x = f"'max(0,min(iw-1080,iw*{r['foco_x']:.4f}-540))'"
         topo = f"[SRC]scale=-2:{H},crop=1080:{H}:x={x}:y=0,setsar=1[topo];"
     elif r and r["tipo"] == "cam":
@@ -112,6 +292,8 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
         pos_leg = (540, alt_cam + 330)
         y_aviso = alt_cam + 220
         cy = alt_cam // 2  # o zoom da reação vai no rosto (câmera em cima)
+        # onde a legenda original fica no jogo (80-96% da altura da tela), sem cobrir a barra de progresso
+        y_leg_jogo = (alt_cam + int(alt_jogo_cam * 0.79), min(H - 16, alt_cam + int(alt_jogo_cam * 0.97)))
         topo = ("[SRC]split[c][j];"
                 f"[c]crop=w=iw*{r['w']:.4f}:h=ih*{r['h']:.4f}:x=iw*{r['x']:.4f}:y=ih*{r['y']:.4f},"
                 f"scale=1080:{alt_cam}:force_original_aspect_ratio=increase,crop=1080:{alt_cam},setsar=1[cam];"
@@ -122,6 +304,7 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
         pos_leg = (540, y_jogo + alt_jogo + 110)
         y_aviso = y_jogo + 80
         cy = H // 2
+        y_leg_jogo = (y_jogo + int(alt_jogo * 0.79), y_jogo + int(alt_jogo * 0.97))
         topo = ("[SRC]split[f][j];"
                 f"[f]scale=-2:{H},crop=1080:{H},boxblur=25:2,eq=brightness=-0.15,setsar=1[fundo];"
                 f"[j]scale=-2:{alt_jogo},crop=1080:{alt_jogo}:x='(iw-1080)*{foco_x}':y=0,setsar=1[jogo];"
@@ -135,5 +318,9 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
     ass = legenda_ass(saida.with_suffix(".ass"), pal, 0, total, f"Créditos: {arroba}", 1080, 1920, pos_leg, 8,
                       gancho=gancho, pergunta=pergunta, gancho_y=gancho_y,
                       aviso_volta=(ABERTURA, y_aviso) if a0 is not None else None)
+    try:
+        _por_legenda_do_jogo(ass, trecho, ini, fim, a0, y_leg_jogo)
+    except Exception as e:  # legenda do jogo é extra: nunca derruba o corte
+        print(f"  legenda do jogo falhou: {str(e)[:150]}", flush=True)
     _render(trecho, ini, dur, sat, off, filtro.replace("{ASS}", ass.name), saida, abertura=a0)
     return saida
