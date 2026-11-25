@@ -24,8 +24,10 @@ erros de transcrição) e devolve:
   "ALANZOKA REAGE AO GTA 6 A 60 FPS", "ALANZOKA É PERSEGUIDO PELA POLÍCIA EM VICE CITY",
   "ALANZOKA DESCOBRE QUE DÁ PRA RESTAURAR CARRO". Escolha o assunto mais chamativo do trecho: o mais polêmico,
   o mais novo, o mais surpreendente ou o mais engraçado. Nunca uma frase solta de conversa.
-- titulo: o título do YouTube, no máximo 70 caracteres, a situação em CAIXA ALTA, no mesmo espírito do gancho
-  mas com outras palavras; pode terminar com KKKK se ele riu de verdade no trecho.
+- titulo: o título do YouTube, no máximo 60 caracteres, que cria CURIOSIDADE sem entregar o que acontece
+  (o gancho já diz o assunto; o título faz a pessoa querer ver como termina). Exemplos do formato:
+  "Ele não esperava que isso fosse acontecer", "O Alanzoka não acreditou no que viu no GTA 6",
+  "Ninguém avisou ele disso". Pode terminar com KKKK se ele riu de verdade no trecho.
 
 Regras: só afirme o que está na transcrição (não invente mortes, brigas, valores, nomes ou acontecimentos);
 sem palavrão; sem emoji; sem aspas; sem hashtags (elas são colocadas depois)."""
@@ -98,8 +100,8 @@ def _gerar(segs: list[dict], ini: float, fim: float, nome: str, jogo: str) -> tu
         return None
     if len(gancho) > 48:
         gancho = gancho[:48].rsplit(" ", 1)[0]
-    if len(titulo) > 75:
-        titulo = titulo[:75].rsplit(" ", 1)[0]
+    if len(titulo) > 70:
+        titulo = titulo[:70].rsplit(" ", 1)[0]
     print(f"  gancho IA: {gancho} | título: {titulo}", flush=True)
     return gancho, titulo
 
@@ -210,6 +212,13 @@ def instalar_live(g: dict) -> None:
         return orig_titulo(segs, pico, gancho)
 
     g["gancho_gta"], g["titulo_gta"] = gancho_gta, titulo_gta
+
+    # 25/11/2026: desabafos e histórias (desabafo.py), além das reações
+    try:
+        import desabafo
+    except ImportError:
+        return
+    desabafo.instalar_live(g)
 
 
 def instalar_pipeline(g: dict) -> None:
