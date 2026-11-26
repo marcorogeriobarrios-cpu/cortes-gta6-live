@@ -185,7 +185,56 @@ def legenda_do_jogo(trecho: Path, t_ini: float, t_fim: float) -> list[tuple[floa
         def nota(v: str) -> int:
             return sum(cont[p] if cont[p] > 1 else -2 for p in v.lower().split())
         texto = max(e["v"], key=lambda v: (nota(v), len(v)))
+        # 26/11/2026: o OCR leu o OVERLAY da live (mensagem do chat + "SUB COMBO") como legenda do jogo e ela
+        # ficou travada na tela o vídeo todo. Overlay é texto parado e com palavras de alerta; legenda de jogo
+        # muda a cada poucos segundos.
+        if e["fim"] - e["ini"] > 9 or _OVERLAY.search(texto):
+            continue
         saida.append((e["ini"], e["fim"], texto))
+    return saida
+
+
+import re as _re_ov
+_OVERLAY = _re_ov.compile(r"(?i)(\b(sub|subs|combo|bits?|follow\w*|seguid\w*|donat\w*|doa[çc][aãõ]\w*|inscri\w*|"
+                      r"prime|tier|raid|host|cheer|resgat\w*|pontos|meta|[úu]ltim[oa]\s+sub|x\d+)\b|@|https?:|www\.|\.com\b)")
+
+
+_legenda_do_jogo_sem_cache = legenda_do_jogo
+_CACHE_LJ: dict = {}
+
+
+def legenda_do_jogo(trecho: Path, t_ini: float, t_fim: float) -> list[tuple[float, float, str]]:  # noqa: F811
+    """Mesma leitura, guardada: é usada para desenhar a legenda do jogo E para limpar a legenda do streamer."""
+    k = (str(trecho), round(t_ini, 2), round(t_fim, 2))
+    if k not in _CACHE_LJ:
+        _CACHE_LJ[k] = _legenda_do_jogo_sem_cache(trecho, t_ini, t_fim)
+    return _CACHE_LJ[k]
+
+
+def _sem_falas_do_jogo(trecho: Path, ini: float, fim: float, palavras: list[dict]) -> list[dict]:
+    """26/11/2026, Marco: "falas dos personagens aparecem no lugar da do youtuber". O Whisper transcreve TODO
+    o áudio; a fala do personagem aparece escrita na legenda do jogo (OCR). Palavra do Whisper que cai no tempo
+    de uma legenda do jogo (com folga) e está escrita nela é do personagem -> sai da legenda do streamer."""
+    import re as _re
+    try:
+        eventos = legenda_do_jogo(trecho, ini, fim)
+    except Exception:
+        return palavras
+    if not eventos:
+        return palavras
+    def norm(w: str) -> str:
+        return _re.sub(r"[^\wà-ÿ]", "", w.lower())
+    evs = [(e0 - 1.0, e1 + 1.0, {norm(w) for w in tx.split() if len(norm(w)) >= 2}) for e0, e1, tx in eventos]
+    fora, saida = 0, []
+    for p in palavras:
+        w = norm(p.get("p", ""))
+        meio = (p["ini"] + p["fim"]) / 2
+        if w and any(a <= meio <= b and w in ws for a, b, ws in evs):
+            fora += 1
+            continue
+        saida.append(p)
+    if fora:
+        print(f"  legenda: {fora} palavra(s) de personagem tiradas da fala do streamer", flush=True)
     return saida
 
 
@@ -239,6 +288,7 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
           saida: Path, gancho: str = "", pico: float | None = None, pergunta: str = "") -> Path:
     dur = fim - ini
     a0 = None
+    palavras = _sem_falas_do_jogo(trecho, ini, fim, palavras)
     # SEM abertura repetida (25/11/2026, Marco: "mostra uma fala nada a ver, depois POUCO ANTES e repete a
     # fala"): o corte começa direto; o que prende é o gancho, o zoom de entrada e a barra de progresso
     if False and pico is not None and pico - ini >= 5.0:
