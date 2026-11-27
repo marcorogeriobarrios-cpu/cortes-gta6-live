@@ -24,10 +24,12 @@ erros de transcrição) e devolve:
   "ALANZOKA REAGE AO GTA 6 A 60 FPS", "ALANZOKA É PERSEGUIDO PELA POLÍCIA EM VICE CITY",
   "ALANZOKA DESCOBRE QUE DÁ PRA RESTAURAR CARRO". Escolha o assunto mais chamativo do trecho: o mais polêmico,
   o mais novo, o mais surpreendente ou o mais engraçado. Nunca uma frase solta de conversa.
-- titulo: o título do YouTube, no máximo 60 caracteres, que cria CURIOSIDADE sem entregar o que acontece
+- titulo: o título do YouTube, no máximo 60 caracteres, em CAIXA ALTA, com o nome do streamer e "GTA 6" quando
+  for GTA (27/11/2026: nos números do canal, títulos em caixa alta com o nome dele tiveram ~10x mais views que
+  frases soltas). Cria CURIOSIDADE sem entregar o que acontece e NUNCA promete algo que não acontece no trecho
   (o gancho já diz o assunto; o título faz a pessoa querer ver como termina). Exemplos do formato:
-  "Ele não esperava que isso fosse acontecer", "O Alanzoka não acreditou no que viu no GTA 6",
-  "Ninguém avisou ele disso". Pode terminar com KKKK se ele riu de verdade no trecho.
+  "ALANZOKA NÃO ESPERAVA ISSO NO GTA 6", "A REAÇÃO DO ALANZOKA NO GTA 6",
+  "NINGUÉM AVISOU O ALANZOKA DISSO". Pode terminar com KKKK se ele riu de verdade no trecho.
 
 Regras: só afirme o que está na transcrição (não invente mortes, brigas, valores, nomes ou acontecimentos);
 sem palavrão; sem emoji; sem aspas; sem hashtags (elas são colocadas depois)."""
@@ -95,7 +97,7 @@ def _gerar(segs: list[dict], ini: float, fim: float, nome: str, jogo: str) -> tu
     except (StopIteration, ValueError):
         return None
     gancho = " ".join(d["gancho"].replace('"', "").split()).upper().strip(" .")
-    titulo = " ".join(d["titulo"].replace('"', "").replace("#", "").split()).strip()
+    titulo = " ".join(d["titulo"].replace('"', "").replace("#", "").split()).strip().upper()
     if len(gancho) < 8 or len(titulo) < 8:
         return None
     if len(gancho) > 48:

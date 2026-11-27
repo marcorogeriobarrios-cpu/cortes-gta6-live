@@ -192,3 +192,35 @@ for _arq, _fn in (("live_gta.py", "instalar_live"), ("cortes/pipeline.py", "inst
 _r = Path("requirements.txt")
 _r.write_text(_r.read_text(encoding="utf-8").rstrip("\n") + "\nanthropic\n", encoding="utf-8")
 print("gancho por IA instalado (Haiku, leve)")
+
+# 27/11/2026: o relatório de visualizações (dados/relatorio_views.md, 189 shorts de nov) mostrou:
+#   - HORÁRIO: postados das 00h às 05h tiveram mediana de 797 views e das 18h às 23h, 628; das 12h às 17h, 3.
+#     -> agora posta das 18h às 4h59 (18, 20, 22, 0, 2 e 4h), no máximo 6 em 18 h.
+#   - DURAÇÃO: até 22 s tiveram média de 1.804 views; 41-60 s, 342. -> corte de 15 a 30 s.
+_d = Path("diario.py")
+_c = _d.read_text(encoding="utf-8")
+_velho = ("    if not (11 <= agora.hour < 23):\n        return False\n    hoje = agora.strftime('%d/%m')\n"
+          "    try:\n        linhas = lg.LOG.read_text(encoding='utf-8').splitlines()\n    except Exception:\n"
+          "        linhas = []\n    return sum(1 for l in linhas if l.startswith(hoje) and 'PUBLICADO' in l) < MAX_POR_DIA\n")
+_novo = ("    if not (agora.hour >= 18 or agora.hour < 5):  # 27/11/2026: noite e madrugada (relatório de views)\n"
+         "        return False\n"
+         "    try:\n        linhas = lg.LOG.read_text(encoding='utf-8').splitlines()\n    except Exception:\n"
+         "        linhas = []\n"
+         "    n = 0\n"
+         "    for l in linhas:\n"
+         "        if 'PUBLICADO' not in l:\n            continue\n"
+         "        try:\n"
+         "            t = dt.datetime.strptime(f'{agora.year}/' + l[:14], '%Y/%d/%m %H:%M:%S').replace(tzinfo=BRT)\n"
+         "        except ValueError:\n            continue\n"
+         "        if t > agora:\n            t = t.replace(year=agora.year - 1)\n"
+         "        n += (agora - t).total_seconds() < 18 * 3600\n"
+         "    return n < MAX_POR_DIA\n")
+if _velho not in _c:
+    raise SystemExit("ajustes.py: não achei a janela de horário do diario.py")
+_d.write_text(_c.replace(_velho, _novo, 1), encoding="utf-8")
+_y = Path("canais.yaml")
+_c = _y.read_text(encoding="utf-8")
+if "short_max: 55" not in _c or "short_min: 20" not in _c:
+    raise SystemExit("ajustes.py: não achei short_min/short_max no canais.yaml")
+_y.write_text(_c.replace("short_max: 55", "short_max: 30").replace("short_min: 20", "short_min: 15"), encoding="utf-8")
+print("ajustes 27/11 aplicados: posta das 18h às 4h59, cortes de 15 a 30 s")
