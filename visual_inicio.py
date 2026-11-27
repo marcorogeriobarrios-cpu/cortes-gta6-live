@@ -200,6 +200,9 @@ _OVERLAY = _re_ov.compile(r"(?i)(\b(sub|subs|combo|bits?|follow\w*|seguid\w*|don
 
 
 _legenda_do_jogo_sem_cache = legenda_do_jogo
+# 27/11/2026, Marco: "tela preta com a fala azul muito poluída" -> a tarja + fala azul sai da tela. A leitura
+# (OCR) continua só para tirar da legenda do streamer as falas dos personagens.
+LEGENDA_JOGO_NA_TELA = False
 _CACHE_LJ: dict = {}
 
 
@@ -390,7 +393,8 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
                       gancho=gancho, pergunta=pergunta, gancho_y=gancho_y,
                       aviso_volta=(ABERTURA, y_aviso) if a0 is not None else None)
     try:
-        _por_legenda_do_jogo(ass, trecho, ini, fim, a0, y_leg_jogo)
+        if LEGENDA_JOGO_NA_TELA:
+            _por_legenda_do_jogo(ass, trecho, ini, fim, a0, y_leg_jogo)
     except Exception as e:  # legenda do jogo é extra: nunca derruba o corte
         print(f"  legenda do jogo falhou: {str(e)[:150]}", flush=True)
     _render(trecho, ini, dur, sat, off, filtro.replace("{ASS}", ass.name), saida, abertura=a0)

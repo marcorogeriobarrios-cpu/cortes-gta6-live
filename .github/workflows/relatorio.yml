@@ -1,0 +1,39 @@
+name: Relatório de visualizações
+
+# Só leitura: puxa as visualizações de cada vídeo do canal e grava dados/relatorio_views.md
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: relatorio
+  cancel-in-progress: false
+
+jobs:
+  relatorio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bibliotecas
+        run: pip install -q google-api-python-client google-auth
+
+      - name: Relatório
+        env:
+          YT_TOKEN: ${{ secrets.YT_TOKEN }}
+        run: python -u relatorio_views.py
+
+      - name: Guardar no repositório
+        run: |
+          git config user.name cortes-bot
+          git config user.email cortes-bot@users.noreply.github.com
+          git add -f dados/relatorio_views.json dados/relatorio_views.md
+          git commit -m "relatório de visualizações" || exit 0
+          for i in 1 2 3; do git pull --rebase -X theirs && git push && break; sleep 5; done
