@@ -59,8 +59,10 @@ def _zoom(picos: list[float], cy: int, H: int) -> str:
 # do lugar onde ela fica no jogo. Sem Tesseract (ou sem legenda no jogo) o vídeo sai como antes.
 _TESS_WIN = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 _QPS = 4  # quadros lidos por segundo
-ESTILO_JOGO = ("Style: Jogo,Arial,50,&H00FFE14D,&H00FFE14D,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,4,2,5,"
-               "50,50,0,1")
+# 27/11/2026, Marco: "queria as falas dos personagens, mas poluindo menos" -> letra menor (38) e só uma caixinha
+# escura semitransparente JUSTA atrás do texto (BorderStyle 3), no lugar da faixa preta na largura toda.
+ESTILO_JOGO = ("Style: Jogo,Arial,38,&H00FFE14D,&H00FFE14D,&H60000000,&H60000000,-1,0,0,0,100,100,0,0,3,9,0,5,"
+               "110,110,0,1")
 
 
 def _tesseract() -> str | None:
@@ -202,7 +204,19 @@ _OVERLAY = _re_ov.compile(r"(?i)(\b(sub|subs|combo|bits?|follow\w*|seguid\w*|don
 _legenda_do_jogo_sem_cache = legenda_do_jogo
 # 27/11/2026, Marco: "tela preta com a fala azul muito poluída" -> a tarja + fala azul sai da tela. A leitura
 # (OCR) continua só para tirar da legenda do streamer as falas dos personagens.
-LEGENDA_JOGO_NA_TELA = False
+LEGENDA_JOGO_NA_TELA = True  # de volta, mas discreta (caixinha justa, letra menor)
+
+
+def _quebra(tx: str, largura: int = 34) -> str:
+    """Quebra em no máximo 2 linhas equilibradas (a caixinha fica justa em cada linha)."""
+    import re as _re
+    pal = tx.split()
+    if len(_re.sub(r"\{[^}]*\}", "", tx)) <= largura or len(pal) < 2:
+        return tx
+    melhor = min(range(1, len(pal)), key=lambda k: abs(len(" ".join(pal[:k])) - len(" ".join(pal[k:]))))
+    return " ".join(pal[:melhor]) + "\\N" + " ".join(pal[melhor:])
+
+
 _CACHE_LJ: dict = {}
 
 
@@ -276,9 +290,7 @@ def _por_legenda_do_jogo(ass: Path, trecho: Path, ini: float, fim: float, a0: fl
         partes.append((max(e0, ini) - ini + desloc, min(e1, fim) - ini + desloc))
         for a, b in partes:
             if b - a >= 0.3:
-                linhas.append(f"Dialogue: 4,{_t(a)},{_t(b)},Leg,,0,0,0,,{{\\an7\\pos(0,{y0})\\bord0\\shad0"
-                              f"\\1c&H000000&\\1a&H10&\\p1}}m 0 0 l 1080 0 1080 {y1 - y0} 0 {y1 - y0}{{\\p0}}")
-                linhas.append(f"Dialogue: 5,{_t(a)},{_t(b)},Jogo,,0,0,0,,{{\\q0\\pos(540,{y})}}{tx}")
+                linhas.append(f"Dialogue: 5,{_t(a)},{_t(b)},Jogo,,0,0,0,,{{\\q0\\pos(540,{y})}}{_quebra(tx)}")
     if not linhas:
         return 0
     txt = ass.read_text(encoding="utf-8-sig")
