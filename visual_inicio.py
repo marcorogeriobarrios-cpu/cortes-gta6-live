@@ -255,6 +255,32 @@ def _sem_falas_do_jogo(trecho: Path, ini: float, fim: float, palavras: list[dict
     return saida
 
 
+def _comeco_forte(palavras: list[dict], ini: float, fim: float, pico: float | None) -> float:
+    """27/11/2026 (o que falta para viralizar): quem rola o feed decide em 1-2 s. O corte passa a começar no
+    máximo 1,5 s antes da PRIMEIRA fala forte (risada, grito, palavrão, exclamação) -- a preparação longa sai,
+    o desfecho continua no fim. Se não há fala forte antes do pico, começa até 6 s antes dele. Mínimo de 12 s."""
+    from . import transcricao as _tr
+    forte = getattr(_tr, "_FORTE", None) or getattr(_tr, "_REACAO", None)
+    limite = pico if pico is not None else fim
+    cands = [p for p in palavras if ini <= p["ini"] <= limite
+             and (p.get("p", "").rstrip().endswith("!") or (forte is not None and forte.search(p.get("p", ""))))]
+    if cands:
+        alvo = cands[0]["ini"] - 1.5
+    elif pico is not None:
+        alvo = pico - 6.0
+    else:
+        return ini
+    novo = max(ini, alvo)
+    if fim - novo < 12:
+        novo = max(ini, fim - 12)
+    antes = [p["ini"] for p in palavras if ini <= p["ini"] <= novo + 0.05]
+    if antes and novo - max(antes) < 0.6:  # não começa no meio de uma palavra
+        novo = max(ini, max(antes) - 0.1)
+    if novo > ini + 0.5:
+        print(f"  começo forte: corte começa {novo - ini:.1f} s mais tarde", flush=True)
+    return novo
+
+
 def _borrar_legenda_original(filtro: str, trecho: Path, ini: float, fim: float, a0: float | None,
                              faixa: tuple[int, int] | None) -> str:
     """27/11/2026, Marco: "o texto atrás vai obstruir, tem que remover o texto do próprio jogo". Enquanto há
@@ -330,9 +356,10 @@ def _por_legenda_do_jogo(ass: Path, trecho: Path, ini: float, fim: float, a0: fl
 
 def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: str, foco_x: float,
           saida: Path, gancho: str = "", pico: float | None = None, pergunta: str = "") -> Path:
+    palavras = _sem_falas_do_jogo(trecho, ini, fim, palavras)
+    ini = _comeco_forte(palavras, ini, fim, pico)
     dur = fim - ini
     a0 = None
-    palavras = _sem_falas_do_jogo(trecho, ini, fim, palavras)
     # SEM abertura repetida (25/11/2026, Marco: "mostra uma fala nada a ver, depois POUCO ANTES e repete a
     # fala"): o corte começa direto; o que prende é o gancho, o zoom de entrada e a barra de progresso
     if False and pico is not None and pico - ini >= 5.0:

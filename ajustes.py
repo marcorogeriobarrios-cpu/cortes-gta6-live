@@ -202,18 +202,22 @@ _c = _d.read_text(encoding="utf-8")
 _velho = ("    if not (11 <= agora.hour < 23):\n        return False\n    hoje = agora.strftime('%d/%m')\n"
           "    try:\n        linhas = lg.LOG.read_text(encoding='utf-8').splitlines()\n    except Exception:\n"
           "        linhas = []\n    return sum(1 for l in linhas if l.startswith(hoje) and 'PUBLICADO' in l) < MAX_POR_DIA\n")
-_novo = ("    if not (agora.hour >= 18 or agora.hour < 5):  # 27/11/2026: noite e madrugada (relatório de views)\n"
-         "        return False\n"
+_novo = ("    fora = not (agora.hour >= 18 or agora.hour < 5)  # 27/11/2026: noite e madrugada (relatório de views)\n"
+         "    if fora and not any(_muito_forte(i) for i in prontos()):\n"
+         "        return False  # fora do horário só sai corte MUITO forte (viral_diario.py)\n"
          "    try:\n        linhas = lg.LOG.read_text(encoding='utf-8').splitlines()\n    except Exception:\n"
          "        linhas = []\n"
-         "    n = 0\n"
+         "    n = n_fora = 0\n"
          "    for l in linhas:\n"
          "        if 'PUBLICADO' not in l:\n            continue\n"
          "        try:\n"
          "            t = dt.datetime.strptime(f'{agora.year}/' + l[:14], '%Y/%d/%m %H:%M:%S').replace(tzinfo=BRT)\n"
          "        except ValueError:\n            continue\n"
          "        if t > agora:\n            t = t.replace(year=agora.year - 1)\n"
-         "        n += (agora - t).total_seconds() < 18 * 3600\n"
+         "        if (agora - t).total_seconds() < 18 * 3600:\n"
+         "            n += 1\n"
+         "            n_fora += 5 <= t.hour < 18\n"
+         "    if fora and n_fora >= 2:\n        return False\n"
          "    return n < MAX_POR_DIA\n")
 if _velho not in _c:
     raise SystemExit("ajustes.py: não achei a janela de horário do diario.py")
@@ -224,3 +228,24 @@ if "short_max: 55" not in _c or "short_min: 20" not in _c:
     raise SystemExit("ajustes.py: não achei short_min/short_max no canais.yaml")
 _y.write_text(_c.replace("short_max: 55", "short_max: 30").replace("short_min: 20", "short_min: 15"), encoding="utf-8")
 print("ajustes 27/11 aplicados: posta das 18h às 4h59, cortes de 15 a 30 s")
+
+# 27/11/2026 (Marco: "faça todos" - viralizar): o código fica no viral_diario.py e entra no diario.py antes do
+# `if __name__`; perguntas do comentário mais polêmicas (comentários estavam em 0,3 por 1.000 views).
+_vd = Path("viral_diario.py")
+if not _vd.exists():
+    raise SystemExit("ajustes.py: falta o viral_diario.py")
+_d = Path("diario.py")
+_c = _d.read_text(encoding="utf-8")
+_ancora = 'if __name__ == "__main__":'
+if _ancora not in _c:
+    raise SystemExit("ajustes.py: não achei o fim do diario.py")
+_d.write_text(_c.replace(_ancora, _vd.read_text(encoding="utf-8") + _ancora, 1), encoding="utf-8")
+_l = Path("live_gta.py")
+_l.write_text(_l.read_text(encoding="utf-8") + '''
+
+# 27/11/2026: perguntas que dividem opinião (geram comentário)
+PERGUNTAS = ["GTA 6 É MELHOR QUE RED DEAD 2?", "ELE ESTAVA CERTO OU ERRADO?", "VOCÊ TERIA FEITO O MESMO?",
+             "GTA 6 VALE O PREÇO QUE COBRARAM?", "QUEM JOGA GTA MELHOR: ALANZOKA OU VOCÊ?",
+             "ISSO FOI SORTE OU HABILIDADE?", "O CHAT TINHA RAZÃO?"]
+''', encoding="utf-8")
+print("ajustes viralizar: fora do horário só corte muito forte (até 2), 1 de outro canal a cada 3, perguntas polêmicas")

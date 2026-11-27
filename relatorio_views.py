@@ -39,6 +39,21 @@ for k in range(0, len(ids), 50):
                        "duracao": seg, "views": int(st.get("viewCount", 0)), "likes": int(st.get("likeCount", 0)),
                        "comentarios": int(st.get("commentCount", 0))})
 
+# RETENÇÃO (YouTube Analytics): só funciona se o login tiver o escopo yt-analytics.readonly
+retencao = {}
+try:
+    ya = build("youtubeAnalytics", "v2", credentials=creds, cache_discovery=False)
+    r = ya.reports().query(ids="channel==MINE", startDate="2026-11-01", endDate="2030-01-01",
+                           metrics="views,averageViewDuration,averageViewPercentage,subscribersGained",
+                           dimensions="video", sort="-views", maxResults=200).execute()
+    for linha in r.get("rows", []):
+        retencao[linha[0]] = {"dur_media_s": linha[2], "pct_assistido": linha[3], "inscritos_ganhos": linha[4]}
+    print(f"retenção: {len(retencao)} vídeos")
+except Exception as e:
+    print(f"retenção indisponível (precisa refazer o login com o escopo yt-analytics.readonly): {str(e)[:150]}")
+for v in videos:
+    v.update(retencao.get(v["id"], {}))
+
 # o que o robô sabe de cada vídeo (pelo log): linha "corte ..." seguida de "PUBLICADO ... <url>"
 log = (DADOS / "live_gta.log").read_text(encoding="utf-8", errors="replace").splitlines() if (DADOS / "live_gta.log").exists() else []
 extra, ultimo = {}, None
@@ -59,9 +74,10 @@ videos.sort(key=lambda v: -v["views"])
 (DADOS / "relatorio_views.json").write_text(json.dumps({"canal": canal["statistics"], "videos": videos},
                                                        ensure_ascii=False, indent=1), encoding="utf-8")
 linhas = [f"# Visualizações ({len(videos)} vídeos) — inscritos: {canal['statistics'].get('subscriberCount')}", "",
-          "| views | likes | coment. | dur | publicado | título | gancho |", "|---|---|---|---|---|---|---|"]
+          "| views | likes | coment. | dur | % assistido | publicado | título | gancho |", "|---|---|---|---|---|---|---|---|"]
 for v in videos:
-    linhas.append(f"| {v['views']} | {v['likes']} | {v['comentarios']} | {v['duracao']}s | {v['publicado'][:16]} | "
+    linhas.append(f"| {v['views']} | {v['likes']} | {v['comentarios']} | {v['duracao']}s | {v.get('pct_assistido', '-')} | "
+                  f"{v['publicado'][:16]} | "
                   f"{v['titulo'][:70]} | {v.get('gancho', '')[:50]} |")
 (DADOS / "relatorio_views.md").write_text("\n".join(linhas), encoding="utf-8")
 print(f"{len(videos)} vídeos; top: {[(v['views'], v['titulo'][:40]) for v in videos[:5]]}")
