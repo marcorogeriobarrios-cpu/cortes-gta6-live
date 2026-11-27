@@ -20,12 +20,15 @@ on:
       dias:
         description: "quantos dias para trás procurar"
         default: "10"
+      canal:
+        description: "só este canal (vazio = todos). Rode um por canal para buscar em paralelo."
+        default: ""
 
 permissions:
   contents: write
 
 concurrency:
-  group: compilacao-${{ inputs.tema || 'finais' }}
+  group: compilacao-${{ inputs.tema || 'finais' }}-${{ inputs.canal }}-${{ inputs.modo }}
   cancel-in-progress: false
 
 jobs:
@@ -71,7 +74,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python -u compilacao.py --tema "${{ inputs.tema || 'finais' }}" --modo "${{ inputs.modo || 'publicar' }}" --dias "${{ inputs.dias || '10' }}"
+        run: python -u compilacao.py --tema "${{ inputs.tema || 'finais' }}" --modo "${{ inputs.modo || 'publicar' }}" --dias "${{ inputs.dias || '10' }}" --canal "${{ inputs.canal }}"
 
       - name: Guardar o que achou/publicou
         if: ${{ always() }}

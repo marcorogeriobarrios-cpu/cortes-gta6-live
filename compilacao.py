@@ -71,12 +71,14 @@ def log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------- 1) busca
-def _canais(tema: dict) -> list[dict]:
+def _canais(tema: dict, so: str = "") -> list[dict]:
     todos = [c for c in config()["canais"] if c.get("autorizado")]
     if tema["canais"] != "todos":
         todos = [c for c in todos if c["nome"] in tema["canais"]]
     if any(c["nome"] == "Alanzoka" for c in todos):  # só a Twitch dele (as mesmas lives, inteiras; sem repetir)
         todos = [c for c in todos if c["nome"] != "Alanzoka"] + [{**lg.CANAL, "nome": "Alanzoka"}]
+    if so:  # um canal por execução: o GitHub roda vários canais AO MESMO TEMPO (a busca é a parte lenta)
+        todos = [c for c in todos if c["nome"].lower() == so.lower()]
     return todos
 
 
@@ -91,8 +93,8 @@ def _videos_gta(canal: dict, dias: int) -> list[dict]:
             log(f"[{canal['nome']}] não listou {aba}: {str(e)[:120]}")
             continue
         for e in [e for e in (lista.get("entries") or []) if e]:
-            if e.get("title") and not GTA6.search(e["title"]):
-                continue
+            if e.get("title") and (not GTA6.search(e["title"]) or re.match(r"(?i)\s*rerun", e["title"])):
+                continue  # 27/11/2026: a busca perdeu 3 h numa REPRISE do Gaules
             url = fontes._url_do_item(e, canal["url"])
             try:
                 with yt_dlp.YoutubeDL(fontes.OPC_BASE) as y:
@@ -125,7 +127,7 @@ def _whisper_small():
     global _SMALL
     if _SMALL is None:
         from faster_whisper import WhisperModel
-        _SMALL = WhisperModel("small", device="cpu", compute_type="int8", cpu_threads=4)
+        _SMALL = WhisperModel("base", device="cpu", compute_type="int8", cpu_threads=4)
     return _SMALL
 
 
@@ -141,11 +143,11 @@ def _audio_pedaco(v: dict, ini: float, fim: float) -> Path:
     return next(BAIXADOS.glob(f"{v['id']}_busca_{int(ini)}.*"))
 
 
-def buscar(nome: str, tema: dict, dias: int, prazo: float) -> list[dict]:
+def buscar(nome: str, tema: dict, dias: int, prazo: float, so: str = "") -> list[dict]:
     """[{url, canal, t, texto, ...}] de todas as falas com as palavras do tema."""
     rx = re.compile(tema["palavras"])
     hits = []
-    for canal in _canais(tema):
+    for canal in _canais(tema, so):
         if time.time() > prazo:
             break
         try:
@@ -174,8 +176,9 @@ def buscar(nome: str, tema: dict, dias: int, prazo: float) -> list[dict]:
     linhas = [f"# Busca '{nome}' ({dt.datetime.now(dt.timezone(dt.timedelta(hours=-3))):%d/%m %H:%M})", ""]
     linhas += [f"- {h['canal']} | {h['url']} | {int(h['t'] // 3600)}:{int(h['t'] % 3600 // 60):02d}:"
                f"{int(h['t'] % 60):02d} | {h['texto'][:120]}" for h in hits]
-    (DADOS / f"compilacao_{nome}.md").write_text("\n".join(linhas) + "\n", encoding="utf-8")
-    (DADOS / f"compilacao_{nome}.json").write_text(json.dumps({"quando": time.time(), "hits": hits},
+    suf = f"_{re.sub(r'\W+', '', so.lower())}" if so else ""
+    (DADOS / f"compilacao_{nome}{suf}.md").write_text("\n".join(linhas) + "\n", encoding="utf-8")
+    (DADOS / f"compilacao_{nome}{suf}.json").write_text(json.dumps({"quando": time.time(), "hits": hits},
                                                               ensure_ascii=False), encoding="utf-8")
     return hits
 
@@ -356,16 +359,24 @@ def main() -> None:
         log(f"'{nome}' já foi publicada em {feitas[nome]['quando']}: {feitas[nome]['urls']}")
         return
     prazo = time.time() + 3.2 * 3600  # deixa ~2 h para montar e publicar dentro das 6 h do GitHub
-    salvo = DADOS / f"compilacao_{nome}.json"
-    try:  # a busca é a parte demorada (horas de áudio): no "publicar" reaproveita uma busca de menos de 24 h
-        d = json.loads(salvo.read_text(encoding="utf-8"))
-        hits = d["hits"] if modo == "publicar" and time.time() - d["quando"] < 86400 else None
-    except Exception:
-        hits = None
-    if hits is not None:
-        log(f"'{nome}': usando a busca de {(time.time() - d['quando']) / 3600:.1f} h atrás ({len(hits)} falas)")
-    else:
-        hits = buscar(nome, tema, dias, prazo)
+    so = arg("--canal", "")
+    hits = None
+    if modo == "publicar":  # a busca é a parte demorada: reaproveita as buscas (de cada canal) de menos de 24 h
+        hits, n = [], 0
+        for arq in DADOS.glob(f"compilacao_{nome}*.json"):
+            try:
+                d = json.loads(arq.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if time.time() - d.get("quando", 0) < 86400:
+                hits += d["hits"]
+                n += 1
+        if n:
+            log(f"'{nome}': usando {n} busca(s) recente(s) ({len(hits)} falas)")
+        else:
+            hits = None
+    if hits is None:
+        hits = buscar(nome, tema, dias, prazo, so)
     trechos = escolher(tema, hits)
     log(f"'{nome}': {len(hits)} fala(s) achada(s), {len(trechos)} trecho(s) escolhido(s)")
     if modo != "publicar" or not trechos:
