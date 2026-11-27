@@ -1,0 +1,94 @@
+name: Compilações (finais, Niko, Davy Jones)
+
+# compilacao.py: busca momentos pela fala nas lives de GTA 6 e monta vídeo longo + short.
+# Todo dia às 12:20 de Brasília tenta os "finais" (só publica quando achar que o Alanzoka zerou, e uma vez só).
+on:
+  schedule:
+    - cron: "20 15 * * *"
+  workflow_dispatch:
+    inputs:
+      tema:
+        description: "finais, niko ou davy"
+        type: choice
+        options: [finais, niko, davy]
+        default: niko
+      modo:
+        description: "buscar (só lista os momentos) ou publicar"
+        type: choice
+        options: [publicar, buscar]
+        default: publicar
+      dias:
+        description: "quantos dias para trás procurar"
+        default: "10"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: compilacao-${{ inputs.tema || 'finais' }}
+  cancel-in-progress: false
+
+jobs:
+  compilacao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Desempacotar o código
+        run: python -c "import base64,io,zipfile; zipfile.ZipFile(io.BytesIO(base64.b64decode(open('pacote.b64').read()))).extractall('.')"
+
+      - name: Ajustes
+        run: python ajustes.py
+
+      - name: ffmpeg, fontes e Tesseract
+        run: |
+          echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg ttf-mscorefonts-installer tesseract-ocr tesseract-ocr-por > /dev/null
+          fc-cache -f > /dev/null
+
+      - name: Bibliotecas
+        run: pip install -q -r requirements.txt
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-turbo-v1
+
+      - name: Preparar (segredos)
+        env:
+          YT_TOKEN: ${{ secrets.YT_TOKEN }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
+        run: python preparar_nuvem.py
+
+      - name: Compilação
+        env:
+          PYTHONIOENCODING: utf-8
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -u compilacao.py --tema "${{ inputs.tema || 'finais' }}" --modo "${{ inputs.modo || 'publicar' }}" --dias "${{ inputs.dias || '10' }}"
+
+      - name: Guardar o que achou/publicou
+        if: ${{ always() }}
+        run: |
+          git config user.name cortes-bot
+          git config user.email cortes-bot@users.noreply.github.com
+          for f in dados/compilacao_*.md dados/compilacao_*.json dados/compilacoes.json dados/live_gta.log dados/cota.json; do
+            if [ -e "$f" ]; then git add -f "$f"; fi
+          done
+          git commit -m "compilação ${{ inputs.tema || 'finais' }}" || exit 0
+          for i in 1 2 3; do git pull --rebase -X theirs && git push && break; sleep 5; done
+
+      - name: Guardar os vídeos para conferir
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: compilacao-${{ inputs.tema || 'finais' }}
+          path: saida/**/comp_*.mp4
+          if-no-files-found: ignore
+          retention-days: 5
