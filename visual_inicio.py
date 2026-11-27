@@ -61,7 +61,7 @@ _TESS_WIN = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 _QPS = 4  # quadros lidos por segundo
 # 27/11/2026, Marco: "queria as falas dos personagens, mas poluindo menos" -> letra menor (38) e só uma caixinha
 # escura semitransparente JUSTA atrás do texto (BorderStyle 3), no lugar da faixa preta na largura toda.
-ESTILO_JOGO = ("Style: Jogo,Arial,38,&H00FFE14D,&H00FFE14D,&H60000000,&H60000000,-1,0,0,0,100,100,0,0,3,9,0,5,"
+ESTILO_JOGO = ("Style: Jogo,Arial,38,&H00FFE14D,&H00FFE14D,&H30000000,&H30000000,-1,0,0,0,100,100,0,0,3,9,0,5,"
                "110,110,0,1")
 
 
@@ -255,6 +255,35 @@ def _sem_falas_do_jogo(trecho: Path, ini: float, fim: float, palavras: list[dict
     return saida
 
 
+def _borrar_legenda_original(filtro: str, trecho: Path, ini: float, fim: float, a0: float | None,
+                             faixa: tuple[int, int] | None) -> str:
+    """27/11/2026, Marco: "o texto atrás vai obstruir, tem que remover o texto do próprio jogo". Enquanto há
+    fala do jogo, a faixa onde fica a legenda ORIGINAL é borrada (some o texto, a cena continua dando para ver)
+    e a nossa legenda vai por cima. Sem fala do jogo, nada é borrado."""
+    if faixa is None or "subtitles='{ASS}'[v]" not in filtro:
+        return filtro
+    jan_ini = min(ini, a0) if a0 is not None else ini
+    jan_fim = max(fim, a0 + ABERTURA) if a0 is not None else fim
+    eventos = legenda_do_jogo(trecho, jan_ini, jan_fim)
+    if not eventos:
+        return filtro
+    desloc = ABERTURA if a0 is not None else 0
+    janelas = []
+    for e0, e1, _ in eventos:
+        if a0 is not None:
+            janelas.append((max(e0, a0) - a0 - 0.15, min(e1, a0 + ABERTURA) - a0 + 0.15))
+        janelas.append((max(e0, ini) - ini + desloc - 0.15, min(e1, fim) - ini + desloc + 0.15))
+    janelas = [(max(0.0, a), b) for a, b in janelas if b - a >= 0.3]
+    if not janelas:
+        return filtro
+    y0, y1 = faixa
+    alt = (y1 - y0) // 2 * 2
+    quando = "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in janelas)
+    borra = (f"split[lgA][lgB];[lgB]crop=1080:{alt}:0:{y0},boxblur=luma_radius=16:luma_power=2[lgZ];"
+             f"[lgA][lgZ]overlay=0:{y0}:enable='{quando}',subtitles='{{ASS}}'[v]")
+    return filtro.replace("subtitles='{ASS}'[v]", borra, 1)
+
+
 def _por_legenda_do_jogo(ass: Path, trecho: Path, ini: float, fim: float, a0: float | None,
                          faixa: tuple[int, int] | None) -> int:
     """faixa = (y0, y1) da área onde a legenda original do jogo aparece no vídeo final: enquanto há fala do
@@ -409,5 +438,10 @@ def short(trecho: Path, ini: float, fim: float, palavras: list[dict], arroba: st
             _por_legenda_do_jogo(ass, trecho, ini, fim, a0, y_leg_jogo)
     except Exception as e:  # legenda do jogo é extra: nunca derruba o corte
         print(f"  legenda do jogo falhou: {str(e)[:150]}", flush=True)
+    try:
+        if LEGENDA_JOGO_NA_TELA:
+            filtro = _borrar_legenda_original(filtro, trecho, ini, fim, a0, y_leg_jogo)
+    except Exception as e:  # nunca derruba o corte
+        print(f"  borrão da legenda do jogo falhou: {str(e)[:150]}", flush=True)
     _render(trecho, ini, dur, sat, off, filtro.replace("{ASS}", ass.name), saida, abertura=a0)
     return saida
