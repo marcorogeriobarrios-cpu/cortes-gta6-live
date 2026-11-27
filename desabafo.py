@@ -28,7 +28,8 @@ live e nem está olhando o jogo: desabafo, opinião forte ou polêmica, históri
 marcante (ex.: dizer que GTA 6 é um mundo vivo como Red Dead Redemption 2), crítica, previsão, bastidor.
 
 Regras:
-- O momento precisa ter começo, meio e fim (uma ideia completa), entre 35 e 59 segundos.
+- O momento precisa ter começo, meio e fim (uma ideia completa), entre 18 e 32 segundos: só o miolo da ideia,
+  sem introdução (27/11/2026: no vídeo de 47 s as pessoas viam em média só 14 s).
 - Comece no começo de uma frase que abre o assunto; termine depois que ele fecha a ideia (de preferência numa
   frase de efeito ou piada final). Use os tempos da transcrição.
 - Ignore conversa à toa, leitura de chat sem graça, narração do que acontece no jogo e reação curta.
@@ -113,7 +114,7 @@ def _achar(segs, nome, jogo):
     for m in sorted(achados, key=lambda m: -m["nota"]):
         a = min((s["ini"] for s in segs), key=lambda x: abs(x - m["inicio"]))
         b = min((s["fim"] for s in segs), key=lambda x: abs(x - m["fim"])) + 0.6
-        if m["nota"] < NOTA_MINIMA or not (30 <= b - a <= 60):
+        if m["nota"] < NOTA_MINIMA or not (16 <= b - a <= 34):
             continue
         if any(a < o["fim"] and b > o["inicio"] for o in bons):  # não repete o mesmo trecho
             continue

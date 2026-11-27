@@ -249,3 +249,12 @@ PERGUNTAS = ["GTA 6 É MELHOR QUE RED DEAD 2?", "ELE ESTAVA CERTO OU ERRADO?", "
              "ISSO FOI SORTE OU HABILIDADE?", "O CHAT TINHA RAZÃO?"]
 ''', encoding="utf-8")
 print("ajustes viralizar: fora do horário só corte muito forte (até 2), 1 de outro canal a cada 3, perguntas polêmicas")
+
+# 27/11/2026 (Studio do Marco): nos vídeos de 22 s e 47 s as pessoas viram em média ~13-14 s. O vídeo acaba
+# logo depois do desfecho (o respiro de 2,5 s era para a pergunta na tela, que já saiu).
+_t = Path("cortes/transcricao.py")
+_c = _t.read_text(encoding="utf-8")
+if "    fim += 2.5\n" not in _c:
+    raise SystemExit("ajustes.py: não achei o respiro do fim no transcricao.py")
+_t.write_text(_c.replace("    fim += 2.5\n", "    fim += 0.8\n", 1), encoding="utf-8")
+print("fim sem respiro longo (0,8 s)")
